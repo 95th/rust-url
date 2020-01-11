@@ -8,13 +8,13 @@
 
 use std::borrow::Cow;
 
-pub type EncodingOverride<'a> = Option<&'a dyn Fn(&str) -> Cow<[u8]>>;
+pub type EncodingOverride<'a> = Option<&'a dyn Fn(&[u8]) -> Cow<[u8]>>;
 
-pub(crate) fn encode<'a>(encoding_override: EncodingOverride, input: &'a str) -> Cow<'a, [u8]> {
+pub(crate) fn encode<'a>(encoding_override: EncodingOverride, input: &'a [u8]) -> Cow<'a, [u8]> {
     if let Some(o) = encoding_override {
         return o(input);
     }
-    input.as_bytes().into()
+    input.into()
 }
 
 pub(crate) fn decode_utf8_lossy(input: Cow<[u8]>) -> Cow<str> {

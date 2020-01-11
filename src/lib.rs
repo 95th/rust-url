@@ -1155,6 +1155,35 @@ impl Url {
         form_urlencoded::parse(self.query().unwrap_or("").as_bytes())
     }
 
+    /// Parse the URL’s query string, if any, as `application/x-www-form-urlencoded`
+    /// and return an iterator of (key, value) pairs.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::borrow::Cow;
+    ///
+    /// use url::Url;
+    /// # use url::ParseError;
+    ///
+    /// # fn run() -> Result<(), ParseError> {
+    /// let url = Url::parse("https://example.com/products?page=2&sort=desc")?;
+    /// let mut pairs = url.query_pairs();
+    ///
+    /// assert_eq!(pairs.count(), 2);
+    ///
+    /// assert_eq!(pairs.next(), Some((Cow::Borrowed("page"), Cow::Borrowed("2"))));
+    /// assert_eq!(pairs.next(), Some((Cow::Borrowed("sort"), Cow::Borrowed("desc"))));
+    /// # Ok(())
+    /// # }
+    /// # run().unwrap();
+    ///
+
+    #[inline]
+    pub fn query_pairs_bytes(&self) -> form_urlencoded::ParseBytes {
+        form_urlencoded::parse_bytes(self.query().unwrap_or("").as_bytes())
+    }
+
     /// Return this URL’s fragment identifier, if any.
     ///
     /// A fragment is the part of the URL after the `#` symbol.

@@ -1436,7 +1436,7 @@ impl<'a> Parser<'a> {
             "http" | "https" | "file" | "ftp" | "gopher" => self.query_encoding_override,
             _ => None,
         };
-        let query_bytes = ::query_encoding::encode(encoding, &query);
+        let query_bytes = ::query_encoding::encode(encoding, query.as_bytes());
         let set = if scheme_type.is_special() {
             SPECIAL_QUERY
         } else {

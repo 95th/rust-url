@@ -27,16 +27,46 @@ use std::str;
 /// converted to `[("#first", "%try%")]`.
 #[inline]
 pub fn parse(input: &[u8]) -> Parse {
-    Parse { input }
+    Parse {
+        byte_parser: ParseBytes { input },
+    }
 }
+
+/// Convert a byte string in the `application/x-www-form-urlencoded` syntax
+/// into a iterator of (name, value) pairs.
+///
+/// Use `parse(input.as_bytes())` to parse a `&str` string.
+///
+/// The names and values are percent-decoded. For instance, `%23first=%25try%25` will be
+/// converted to `[(b"#first", b"%try%")]`.
+#[inline]
+pub fn parse_bytes(input: &[u8]) -> ParseBytes {
+    ParseBytes { input }
+}
+
 /// The return type of `parse()`.
 #[derive(Copy, Clone)]
 pub struct Parse<'a> {
-    input: &'a [u8],
+    byte_parser: ParseBytes<'a>,
 }
 
 impl<'a> Iterator for Parse<'a> {
     type Item = (Cow<'a, str>, Cow<'a, str>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (n, v) = self.byte_parser.next()?;
+        Some((decode_utf8_lossy(n), decode_utf8_lossy(v)))
+    }
+}
+
+/// The return type of `parse()`.
+#[derive(Copy, Clone)]
+pub struct ParseBytes<'a> {
+    input: &'a [u8],
+}
+
+impl<'a> Iterator for ParseBytes<'a> {
+    type Item = (Cow<'a, [u8]>, Cow<'a, [u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -52,17 +82,17 @@ impl<'a> Iterator for Parse<'a> {
             let mut split2 = sequence.splitn(2, |&b| b == b'=');
             let name = split2.next().unwrap();
             let value = split2.next().unwrap_or(&[][..]);
-            return Some((decode(name), decode(value)));
+            return Some((decode_bytes(name), decode_bytes(value)));
         }
     }
 }
 
-fn decode(input: &[u8]) -> Cow<str> {
+fn decode_bytes(input: &[u8]) -> Cow<[u8]> {
     let replaced = replace_plus(input);
-    decode_utf8_lossy(match percent_decode(&replaced).into() {
+    match percent_decode(&replaced).into() {
         Cow::Owned(vec) => Cow::Owned(vec),
         Cow::Borrowed(_) => replaced,
-    })
+    }
 }
 
 /// Replace b'+' with b' '
@@ -256,6 +286,13 @@ impl<'a, T: Target> Serializer<'a, T> {
     ///
     /// Panics if called after `.finish()`.
     pub fn append_pair(&mut self, name: &str, value: &str) -> &mut Self {
+        self.append_pair_slice(name.as_bytes(), value.as_bytes())
+    }
+
+    /// Serialize and append a name/value pair.
+    ///
+    /// Panics if called after `.finish()`.
+    pub fn append_pair_slice(&mut self, name: &[u8], value: &[u8]) -> &mut Self {
         append_pair(
             string(&mut self.target),
             self.start_position,
@@ -279,6 +316,36 @@ impl<'a, T: Target> Serializer<'a, T> {
         I::Item: Borrow<(K, V)>,
         K: AsRef<str>,
         V: AsRef<str>,
+    {
+        {
+            let string = string(&mut self.target);
+            for pair in iter {
+                let &(ref k, ref v) = pair.borrow();
+                append_pair(
+                    string,
+                    self.start_position,
+                    self.encoding,
+                    k.as_ref().as_bytes(),
+                    v.as_ref().as_bytes(),
+                );
+            }
+        }
+        self
+    }
+
+    /// Serialize and append a number of name/value pairs.
+    ///
+    /// This simply calls `append_pair` repeatedly.
+    /// This can be more convenient, so the user doesn’t need to introduce a block
+    /// to limit the scope of `Serializer`’s borrow of its string.
+    ///
+    /// Panics if called after `.finish()`.
+    pub fn extend_pairs_bytes<I, K, V>(&mut self, iter: I) -> &mut Self
+    where
+        I: IntoIterator,
+        I::Item: Borrow<(K, V)>,
+        K: AsRef<[u8]>,
+        V: AsRef<[u8]>,
     {
         {
             let string = string(&mut self.target);
@@ -333,8 +400,8 @@ fn append_pair(
     string: &mut String,
     start_position: usize,
     encoding: EncodingOverride,
-    name: &str,
-    value: &str,
+    name: &[u8],
+    value: &[u8],
 ) {
     append_separator_if_needed(string, start_position);
     append_encoded(name, string, encoding);
@@ -342,6 +409,6 @@ fn append_pair(
     append_encoded(value, string, encoding);
 }
 
-fn append_encoded(s: &str, string: &mut String, encoding: EncodingOverride) {
-    string.extend(byte_serialize(&query_encoding::encode(encoding, s.into())))
+fn append_encoded(s: &[u8], string: &mut String, encoding: EncodingOverride) {
+    string.extend(byte_serialize(&query_encoding::encode(encoding, s)))
 }
